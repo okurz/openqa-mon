@@ -66,19 +66,24 @@ func CreateTUI() TUI {
 	tui.showTracker = false
 	tui.showStatus = true
 	tui.Model.jobs = make([]gopenqa.Job, 0)
-	tui.Model.jobGroups = make(map[int]gopenqa.JobGroup, 0)
+	tui.Model.jobGroups = make([]gopenqa.JobGroup, 0)
 	tui.Model.reviewed = make(map[int64]bool, 0)
 	return tui
 }
 
+/* */
+type TUIGroup struct {
+	Name string
+	Jobs []gopenqa.Job // Jobs to be displayed
+}
+
 /* The model that will be displayed in the TUI*/
 type TUIModel struct {
-	jobs       []gopenqa.Job            // Jobs to be displayed
-	jobGroups  map[int]gopenqa.JobGroup // Job Groups
-	mutex      sync.Mutex               // Access mutex to the model
-	offset     int                      // Line offset for printing
-	printLines int                      // Lines that would need to be printed, needed for offset handling
-	reviewed   map[int64]bool           // Indicating if failed jobs are reviewed
+	groups     []TUIGroup     // Jobs and job groups to display
+	mutex      sync.Mutex     // Access mutex to the model
+	offset     int            // Line offset for printing
+	printLines int            // Lines that would need to be printed, needed for offset handling
+	reviewed   map[int64]bool // Indicating if failed jobs are reviewed
 }
 
 func (tui *TUI) visibleJobCount() int {
@@ -126,7 +131,7 @@ func (model *TUIModel) Jobs() []gopenqa.Job {
 	return model.jobs
 }
 
-func (tui *TUIModel) SetJobGroups(grps map[int]gopenqa.JobGroup) {
+func (tui *TUIModel) SetJobGroups(grps []gopenqa.JobGroup) {
 	tui.jobGroups = grps
 }
 
@@ -344,16 +349,10 @@ func (tui *TUI) buildJobsScreenByGroup(width int) []string {
 		}
 		groups[job.GroupID] = append(groups[job.GroupID], job)
 	}
-	// Get group list and sort it by index
-	grpIDs := make([]int, 0)
-	for k := range groups {
-		grpIDs = append(grpIDs, k)
-	}
-	sort.Ints(grpIDs)
 
 	// Now print them sorted by group ID
 	first := true
-	for _, id := range grpIDs {
+	for _, id := range groups {
 		grp := tui.Model.jobGroups[id]
 		jobs := groups[id]
 		statC := make(map[string]int, 0)

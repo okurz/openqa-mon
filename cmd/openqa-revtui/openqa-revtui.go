@@ -12,7 +12,7 @@ import (
 	"github.com/grisu48/gopenqa"
 )
 
-const VERSION = "1.1.0"
+const VERSION = "1.2.0"
 
 /* Group is a single configurable monitoring unit. A group contains all parameters that will be queried from openQA */
 type Group struct {
@@ -36,7 +36,6 @@ type Config struct {
 }
 
 var cf Config
-var knownJobs []gopenqa.Job
 var updatedRefresh bool
 
 func (cf *Config) LoadToml(filename string) error {
@@ -168,18 +167,6 @@ func checkReviewed(job int64, instance *gopenqa.Instance) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-func FetchJobGroups(instance gopenqa.Instance) (map[int]gopenqa.JobGroup, error) {
-	jobGroups := make(map[int]gopenqa.JobGroup)
-	groups, err := instance.GetJobGroups()
-	if err != nil {
-		return jobGroups, err
-	}
-	for _, jg := range groups {
-		jobGroups[jg.ID] = jg
-	}
-	return jobGroups, nil
 }
 
 /* Get job or clone current job of the given job ID */
@@ -475,9 +462,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Prepare structure for holding jobs
 	if len(cf.Groups) == 0 {
 		fmt.Fprintf(os.Stderr, "No review groups defined\n")
 		os.Exit(1)
+	}
+	jobGroups = make([]Group, len(cf.Groups))
+	for i, grp := range cf.Groups {
+		jobGroups[i] = Group{Name: grp.Name, Params: grp.Params, MaxLifetime: grp.MaxLifetime, jobs: make([]gopenqa.Job, 0)}
 	}
 
 	instance := gopenqa.CreateInstance(cf.Instance)
@@ -518,6 +510,7 @@ func refreshJobs(tui *TUI, instance *gopenqa.Instance) error {
 	oldJobs := tui.Model.Jobs()
 	tui.SetStatus(fmt.Sprintf("Refreshing %d jobs ... ", len(oldJobs)))
 	tui.Update()
+
 	// Refresh all jobs at once in one request
 	ids := make([]int64, 0)
 	for _, job := range oldJobs {
@@ -527,6 +520,7 @@ func refreshJobs(tui *TUI, instance *gopenqa.Instance) error {
 	if err != nil {
 		return err
 	}
+
 	for _, job := range jobs {
 		updated := false
 		if j, found := getKnownJob(job.ID); found {
@@ -545,6 +539,7 @@ func refreshJobs(tui *TUI, instance *gopenqa.Instance) error {
 			}
 		}
 		tui.Update()
+
 		// Scan failed jobs for comments
 		state := job.JobState()
 		if state == "failed" || state == "incomplete" || state == "parallel_failed" {
@@ -558,6 +553,7 @@ func refreshJobs(tui *TUI, instance *gopenqa.Instance) error {
 		}
 	}
 	knownJobs = jobs
+
 	tui.Model.Apply(jobs)
 	tui.SetStatus(status)
 	tui.Update()
@@ -642,9 +638,9 @@ func tui_main(tui *TUI, instance gopenqa.Instance) error {
 	}
 	fmt.Printf("Initial querying instance %s ... \n", cf.Instance)
 	fmt.Println("\tGet job groups ... ")
-	jobgroups, err := FetchJobGroups(instance)
+	jobgroups, err := instance.GetJobGroups()
 	if err != nil {
-		return fmt.Errorf("Error fetching job groups: %s", err)
+		return fmt.Errorf("error fetching job groups: %s", err)
 	}
 	if len(jobgroups) == 0 {
 		fmt.Fprintf(os.Stderr, "Warn: No job groups\n")
